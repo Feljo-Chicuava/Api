@@ -1,91 +1,63 @@
-from http.server import BaseHTTPRequestHandler
-import json
-import re
-import urllib.request
-import urllib.parse
-import time
-from urllib.parse import urlparse, parse_qs
+from flask import Flask, request, jsonify
+import requests
+from flask_cors import CORS
 
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        query = parse_qs(urlparse(self.path).query)
-        path = self.path.split('?')[0]
-        
-        # 1. SEGURANÇA (Baseado no original)
-        CHAVE_MESTRA = "0099@"
-        key_enviada = query.get('key', [None])[0]
-        
-        if key_enviada != CHAVE_MESTRA:
-            self.send_response(401)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"sucesso": False, "erro": "Chave inválida."}).encode())
-            return
+app = Flask(__name__)
+CORS(app) # Aceita qualquer requisição (Cross-Origin)
 
-        # 2. LÓGICA DE EXTRAÇÃO DE ID
-        def pegar_id(text):
-            if not text: return None
-            pattern = r'(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/|youtube\.com\/shorts\/)([^"&?\/ ]{11})'
-            match = re.search(pattern, text, re.IGNORECASE)
-            return match.group(1) if match else (text if len(text.strip()) == 11 else None)
+# Configurações
+CHAVE_MESTRA = "0099@"
 
-        input_url = query.get('url', query.get('id', [None]))[0]
-        video_id = pegar_id(input_url)
-        formato = query.get('format', ['mp3'])[0]
+@app.route('/api/index', methods=['GET', 'POST'])
+def youtube_downloader():
+    # 1. Verificação de Chave e Parâmetros
+    key = request.args.get('key')
+    if key != CHAVE_MESTRA:
+        return jsonify({"erro": "Chave de API invalida"}), 403
 
-        if not video_id:
-            self.send_response(400)
-            self.end_headers()
-            self.wfile.write(json.dumps({"sucesso": False, "erro": "Link inválido."}).encode())
-            return
+    input_data = request.args.get('url') or request.args.get('id')
+    formato = request.args.get('format', 'mp3')
 
-        try:
-            # 3. COMUNICAÇÃO COM O SERVIDOR (Simulando o original)
-            url_limpa = f"https://www.youtube.com/watch?v={video_id}"
-            api_start = f"https://loader.to/ajax/download.php?format={formato}&url={urllib.parse.quote(url_limpa)}"
-            
-            req = urllib.request.Request(api_start, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as response:
-                data_start = json.loads(response.read().decode())
+    if not input_data:
+        return jsonify({"erro": "Envie ?url= ou ?id= e &key=0099@"}), 400
 
-            job_id = data_start.get('id')
-            if not job_id:
-                raise Exception("Servidor ocupado.")
+    # Se for apenas o ID de 11 caracteres, monta a URL
+    url = f"https://www.youtube.com/watch?v={input_data}" if len(input_data) == 11 else input_data
 
-            # 4. AGUARDANDO O LINK (Polling rápido)
-            link_direto = None
-            for _ in range(8): # Reduzido para ser mais rápido
-                time.sleep(1.2)
-                with urllib.request.urlopen(f"https://loader.to/ajax/progress.php?id={job_id}") as check:
-                    res_check = json.loads(check.read().decode())
-                    if res_check.get('success') and res_check.get('download_url'):
-                        link_direto = res_check['download_url']
-                        break
+    # 2. Iniciar a Conversão (Rápido)
+    api_start = "https://loader.to/ajax/download.php"
+    params = {
+        'format': formato,
+        'url': url
+    }
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/110.0.0.0 Safari/537.36'
+    }
 
-            if link_direto:
-                # 5. RESPOSTA SEM LINK DIRETO
-                # Criamos um link que aponta para a sua própria API
-                host = self.headers.get('Host')
-                proxy_download = f"https://{host}/api/download?file={urllib.parse.quote(link_direto)}"
-                
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.send_header('Access-Control-Allow-Origin', '*')
-                self.end_headers()
-                
-                self.wfile.write(json.dumps({
-                    "sucesso": True,
-                    "dados": {
-                        "id": video_id,
-                        "titulo": data_start.get('title', 'Vídeo'),
-                        "thumb": f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg",
-                        "download_api": proxy_download  # O link direto não aparece aqui
-                    }
-                }).encode())
-            else:
-                raise Exception("Tempo esgotado.")
+    try:
+        response = requests.get(api_start, params=params, headers=headers, timeout=10)
+        data_start = response.json()
 
-        except Exception as e:
-            self.send_response(500)
-            self.end_headers()
-            self.wfile.write(json.dumps({"sucesso": False, "erro": str(e)}).encode())
+        if 'id' in data_start:
+            # 3. Resultado Imediato sem o Loop de espera
+            return jsonify({
+                "sucesso": True,
+                "mensagem": "Conversao iniciada!",
+                "id_processamento": data_start['id'],
+                "titulo": data_start.get('title', 'Video/Audio YouTube'),
+                "url_verificacao": f"https://loader.to/ajax/progress.php?id={data_start['id']}"
+            })
+        else:
+            return jsonify({
+                "sucesso": False,
+                "erro": "Falha ao iniciar conversao na API externa",
+                "detalhe": data_start
+            }), 500
+
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
+
+# Necessário para rodar localmente ou em certos ambientes
+if __name__ == '__main__':
+    app.run(debug=True)
