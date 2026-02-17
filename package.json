@@ -1,6 +1,8 @@
 {
-  "name": "youtube-api-downloader",
+  "name": "yt-downloader-vercel",
   "version": "1.0.0",
   "type": "module",
-  "dependencies": {}
+  "dependencies": {
+    "youtube-dl-exec": "^3.0.2"
+  }
 }
