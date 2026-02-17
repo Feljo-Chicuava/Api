@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "dependencies": {
-    "youtube-dl-exec": "^3.0.2"
+    "debug": "^4.3.4",
+    "youtube-dl-exec": "3.0.2"
+  },
+  "scripts": {
+    "install": "npm install debug"
   }
 }
