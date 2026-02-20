@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 app = Flask(__name__)
 
 # URL alvo extraída do seu código
-BASE_URL = "SUA_URL_AQUI" 
+BASE_URL = "https://hyper.hyperappz.site" 
 
 def tratar_imagem(url):
     """Replica a lógica do Java: se contiver w185, troca por original"""
