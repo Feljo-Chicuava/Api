@@ -1,83 +1,105 @@
-from fastapi import FastAPI, Query, HTTPException
+from flask import Flask, jsonify, request
+import requests
 from bs4 import BeautifulSoup
-import httpx
+import re
 
-app = FastAPI(title="Stream+ API")
+app = Flask(__name__)
 
-# URL base
-BASE_URL = "https://hyper.hyperappz.site/"
+# URL extraída da lógica de descriptografia do seu código Java
+BASE_URL = "SUA_URL_AQUI" 
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
-}
+def extrair_item(s):
+    [cite_start]"""Replica a função 'extrair' do seu código Java [cite: 47-53]"""
+    mapa = {}
+    
+    # [cite_start]ID: s.attr("id").replace("post-", "")[span_0](end_span)[span_1](end_span)
+    mapa['id'] = s.get('id', '').replace('post-', '')
+    
+    # [span_2](start_span)[span_3](start_span)Imagem: div.poster img -> src[span_2](end_span)[span_3](end_span)
+    img_tag = s.select_one('div.poster img')
+    mapa['imagem'] = img_tag.get('src') if img_tag else ""
+    
+    # [span_4](start_span)[span_5](start_span)Rating: div.rating[span_4](end_span)[span_5](end_span)
+    rating_tag = s.select_one('div.rating')
+    mapa['rating'] = rating_tag.text.strip() if rating_tag else ""
+    
+    # [span_6](start_span)[span_7](start_span)Link e Tipo: Verifica se contém /trailer-m/ ou /trailer-s/ [cite: 52-53, 79-80]
+    play_link = s.select_one('div.poster a')
+    link = play_link.get('href') if play_link else ""
+    mapa['link'] = link
+    
+    if "/trailer-m/" in link:
+        mapa['tipo'] = "Filme"
+    elif "/trailer-s/" in link:
+        mapa['tipo'] = "Série"
+    else:
+        mapa['tipo'] = "Desconhecido"
+    
+    # [cite_start]Título: div.data h3 a [cite: 50-51, 77-78]
+    titulo_tag = s.select_one('div.data h3 a')
+    mapa['titulo'] = titulo_tag.text.strip() if titulo_tag else ""
+    
+    # [cite_start]Data: div.data span[span_6](end_span)[span_7](end_span)
+    data_tag = s.select_one('div.data span')
+    mapa['data'] = data_tag.text.strip() if data_tag else ""
+    
+    return mapa
 
-client = httpx.AsyncClient(headers=HEADERS, timeout=15.0, follow_redirects=True)
-
-def parse_item(element):
+@app.route('/api/home', methods=['GET'])
+def home():
     try:
-        link_tag = element.select_one("div.poster a")
-        link = link_tag.get('href', '') if link_tag else ""
-        
-        img_tag = element.select_one("div.poster img")
-        imagem = img_tag.get('src') or img_tag.get('data-src') or ""
-        
-        title_tag = element.select_one("div.data h3 a")
-        titulo = title_tag.get_text(strip=True) if title_tag else ""
-        
-        rating = element.select_one("div.rating").get_text(strip=True) if element.select_one("div.rating") else "N/A"
-        
-        return {
-            "titulo": titulo,
-            "imagem": imagem,
-            "rating": rating,
-            "link": link,
-            "tipo": "Serie" if "/tvshows/" in link else "Filme"
-        }
-    except:
-        return None
-
-@app.get("/")
-async def home():
-    try:
-        response = await client.get(BASE_URL)
+        response = requests.get(BASE_URL, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        return {
-            "animes": [parse_item(i) for i in soup.select("#genre_animes article") if parse_item(i)],
-            "novelas": [parse_item(i) for i in soup.select("#genre_novelas article") if parse_item(i)],
-            "doramas": [parse_item(i) for i in soup.select("#genre_doramas-dramas-coreanos article") if parse_item(i)],
-            "series": [parse_item(i) for i in soup.select("#dt-tvshows article") if parse_item(i)]
+        # [span_8](start_span)Mapeamento de todas as secções do seu HomeFragment [cite: 54-58]
+        data = {
+            "animes": [extrair_item(s) for s in soup.select('div#genre_animes article.item')],
+            "novelas": [extrair_item(s) for s in soup.select('div#genre_novelas article.item')],
+            "doramas": [extrair_item(s) for s in soup.select('div#genre_doramas-dramas-coreanos article.item')],
+            "series_recentes": [extrair_item(s) for s in soup.select('div#dt-tvshows article.item')],
+            "geral": [extrair_item(s) for s in soup.select('article.item')]
         }
+        return jsonify(data)
     except Exception as e:
-        return {"erro": str(e)}
+        return jsonify({"erro": str(e)}), 500
 
-@app.get("/search")
-async def search(q: str = Query(..., min_length=1)):
-    url = f"{BASE_URL}?s={q}"
-    response = await client.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    return {"results": [parse_item(i) for i in soup.select("article.item") if parse_item(i)]}
-
-@app.get("/details")
-async def details(url: str):
+@app.route('/api/generos', methods=['GET'])
+def generos():
+    [cite_start]"""Replica o _gener_request_listener [cite: 65-70]"""
     try:
-        response = await client.get(url)
+        # [cite_start]No seu código, géneros usa uma URL com sufixo descriptografado[span_8](end_span)
+        url_generos = BASE_URL + "/generos" # Ajuste conforme necessário
+        response = requests.get(url_generos, timeout=10)
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        iframe = soup.select_one("iframe.metaframe, iframe.rptss")
-        player = iframe.get('src') if iframe else None
-        
-        sinopse = soup.select_one("div.wp-content p")
-        
-        return {
-            "titulo": soup.select_one("h1").get_text(strip=True) if soup.select_one("h1") else "",
-            "sinopse": sinopse.get_text(strip=True) if sinopse else "",
-            "player_url": player,
-            "capa": soup.select_one("div.poster img").get('src') if soup.select_one("div.poster img") else ""
-        }
-    except:
-        return {"erro": "Falha ao obter detalhes"}
+        lista_generos = []
+        for g in soup.select('a.btgenre'):
+            nome = g.text.strip()
+            style = g.get('style', '')
+            
+            # [span_9](start_span)Extração da imagem via style url('...')[span_9](end_span)
+            imagem = ""
+            if "url('" in style:
+                imagem = style.split("url('")[1].split("')")[0]
+            
+            # [span_10](start_span)Lógica de tipo de género[span_10](end_span)
+            tipo_genero = "simples"
+            nome_low = nome.lower()
+            if "ano" in nome_low: tipo_genero = "porano"
+            elif "coleções" in nome_low: tipo_genero = "colecoes"
+            elif "legendados" in nome_low: tipo_genero = "legendado"
+            elif "doramas" in nome_low: tipo_genero = "doramas"
+            elif "animes" in nome_low: tipo_genero = "animes"
+            
+            lista_generos.append({
+                "nome": nome,
+                "link": g.get('href'),
+                "imagem": imagem,
+                "tipo": tipo_genero
+            })
+        return jsonify(lista_generos)
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
 
-@app.on_event("shutdown")
-async def shutdown():
-    await client.aclose()
+if __name__ == "__main__":
+    app.run(debug=True)
